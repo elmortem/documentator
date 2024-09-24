@@ -74,6 +74,7 @@ namespace Documentator
 				if (GUILayout.Button("Remove", GUILayout.Width(60)))
 				{
 					_inputFolders.RemoveAt(i);
+					_enableInputFolders.RemoveAt(i);
 					SaveConfig();
 				}
 
@@ -86,6 +87,7 @@ namespace Documentator
 				if (!string.IsNullOrEmpty(path))
 				{
 					_inputFolders.Add(path);
+					_enableInputFolders.Add(true);
 					SaveConfig();
 				}
 			}
@@ -220,16 +222,17 @@ namespace Documentator
 					inMultiLineComment = true;
 					commentBuffer.AppendLine(trimmedLine);
 				}
-				else if (trimmedLine.StartsWith("[Input]"))
-				{
-					currentAttribute = "Input";
-				}
-				else if (trimmedLine.StartsWith("[Output]"))
-				{
-					currentAttribute = "Output";
-				}
 				else
 				{
+					if (trimmedLine.StartsWith("[Input]"))
+					{
+						currentAttribute = "Input";
+					}
+					else if (trimmedLine.StartsWith("[Output]"))
+					{
+						currentAttribute = "Output";
+					}
+					
 					if (Regex.IsMatch(trimmedLine,
 							@"^public\s+(?:(?:abstract|sealed|static)\s+)*(?:partial\s+)?(class|struct)"))
 					{
@@ -245,7 +248,7 @@ namespace Documentator
 					else if (isPublicClass)
 					{
 						Match varMatch = Regex.Match(trimmedLine,
-							@"^public\s+((?:static|readonly|const)\s+)*(\w+(?:<.*?>)?)\s+(\w+)\s*(?:{\s*get;|;|=)");
+							@"^(?:\[.*?\]\s*)?public\s+((?:static|readonly|const)\s+)*(\w+(?:<.*?>)?)\s+(\w+)\s*(?:{\s*get;|;|=)");
 						if (varMatch.Success)
 						{
 							classInfo.Variables.Add(new MemberInfo
