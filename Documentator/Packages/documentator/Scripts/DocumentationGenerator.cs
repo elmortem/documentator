@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using UnityEditor;
 using System.IO;
@@ -205,6 +206,9 @@ namespace Documentator
 			{
 				string trimmedLine = line.Trim();
 
+				if (trimmedLine.StartsWith("// TODO", StringComparison.InvariantCultureIgnoreCase) || trimmedLine.StartsWith("//TODO", StringComparison.InvariantCultureIgnoreCase))
+					continue;
+				
 				if (inMultiLineComment)
 				{
 					commentBuffer.AppendLine(trimmedLine);
