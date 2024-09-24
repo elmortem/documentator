@@ -1,0 +1,2 @@
+# documentator
+Documentation Generator
