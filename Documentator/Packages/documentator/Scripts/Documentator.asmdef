@@ -2,7 +2,9 @@
     "name": "Documentator",
     "rootNamespace": "Documentator",
     "references": [],
-    "includePlatforms": [],
+    "includePlatforms": [
+        "Editor"
+    ],
     "excludePlatforms": [],
     "allowUnsafeCode": true,
     "overrideReferences": false,
