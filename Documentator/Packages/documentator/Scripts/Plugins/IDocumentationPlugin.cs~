@@ -1,0 +1,10 @@
+using System.Collections.Generic;
+
+namespace Documentator.Plugins
+{
+	public interface IDocumentationPlugin
+	{
+		void Generate(DocumentationProject project, Dictionary<string, string> settings);
+		void OnGUI(Dictionary<string, string> settings);
+	}
+}

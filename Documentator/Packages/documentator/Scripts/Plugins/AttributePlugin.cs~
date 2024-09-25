@@ -1,0 +1,7 @@
+namespace Documentator.Plugins
+{
+	public class AttributePlugin
+	{
+		
+	}
+}

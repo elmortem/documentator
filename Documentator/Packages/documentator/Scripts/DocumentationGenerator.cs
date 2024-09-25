@@ -2,15 +2,15 @@ using System;
 using UnityEngine;
 using UnityEditor;
 using System.IO;
-using System.Text.RegularExpressions;
-using System.Text;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
+using Documentator.Plugins;
 
 namespace Documentator
 {
 	/// <summary>
-	/// Not a complete Markdown generator from XML documentation in comments.
+	/// Markdown generator from XML documentation in comments.
 	/// </summary>
 	public class DocumentationGenerator : EditorWindow
 	{
@@ -19,20 +19,51 @@ namespace Documentator
 		private List<string> _inputFolders = new();
 		private List<bool> _enableInputFolders = new();
 		private string _outputFolder = "";
-		private bool _writeTitle;
+		private bool _writeTitle = true;
+		private bool _generateTableOfContents;
+		private bool _writeAttributes = true;
+		private bool _inlineClasses;
+		private List<string> _kindOrder = new() { "enum", "method", "property", "field" };
+		private List<string> _kindTemplates = new() { "enum {0}", "method {0}", "property {0}", "field {0}" };
+		private List<string> _kindTitles = new() { "Enums", "Methods", "Properties", "Field" };
+		
 		private Vector2 _scrollPosition;
+		private bool _showKindOrderSection;
+		private bool _showPluginsSection;
+		private Dictionary<IDocumentationPlugin, bool> _showPlugins = new();
 
-		[System.Serializable]
+
+		private List<PluginData> _pluginConfigs = new();
+		private readonly List<IDocumentationPlugin> _plugins = new();
+
+		[Serializable]
+		private class PluginData
+		{
+			public string name;
+			public bool enabled;
+			public string settings;
+		}
+
+		[Serializable]
 		private class Config
 		{
 			public List<string> inputFolders = new();
 			public List<bool> enableInputFolders = new();
 			public string outputFolder = string.Empty;
 			public bool writeTitle;
+			public bool generateTableOfContents;
+			public bool writeAttributes;
+			public bool inlineClasses;
+			public List<string> kindOrder = new();
+			public List<string> kindTemplates = new();
+			public List<string> kindTitles = new();
+			public List<PluginData> pluginConfigs = new();
 		}
 
+		/// <summary>
+		/// Show Documantator window.
+		/// </summary>
 		[MenuItem("Tools/Documentator")]
-		// Show Documantator window.
 		public static void ShowWindow()
 		{
 			GetWindow<DocumentationGenerator>("Documentator");
@@ -41,6 +72,7 @@ namespace Documentator
 		private void OnEnable()
 		{
 			LoadConfig();
+			LoadPlugins();
 		}
 
 		private void OnGUI()
@@ -49,7 +81,7 @@ namespace Documentator
 
 			_scrollPosition = EditorGUILayout.BeginScrollView(_scrollPosition);
 
-			EditorGUILayout.LabelField($"Input Folders");
+			EditorGUILayout.LabelField("Input Folders");
 			for (int i = 0; i < _inputFolders.Count; i++)
 			{
 				EditorGUILayout.BeginHorizontal();
@@ -110,17 +142,120 @@ namespace Documentator
 			EditorGUILayout.EndHorizontal();
 
 			EditorGUI.BeginChangeCheck();
-			_writeTitle = GUILayout.Toggle(_writeTitle, "Write Title");
+
+			_writeTitle = EditorGUILayout.Toggle("Title", _writeTitle);
+			_generateTableOfContents = EditorGUILayout.Toggle("Table of Contents", _generateTableOfContents);
+			_writeAttributes = EditorGUILayout.Toggle("Attributes", _writeAttributes);
+			_inlineClasses = EditorGUILayout.Toggle("Inline classes", _inlineClasses);
+			
 			if (EditorGUI.EndChangeCheck())
 				SaveConfig();
+
+			EditorGUILayout.Space();
+			_showKindOrderSection = EditorGUILayout.Foldout(_showKindOrderSection, "Kind Order", true);
+			if (_showKindOrderSection)
+			{
+				EditorGUI.indentLevel++;
+				DrawKindOrderSection();
+				EditorGUI.indentLevel--;
+			}
+
+			EditorGUILayout.Space();
+			_showPluginsSection = EditorGUILayout.Foldout(_showPluginsSection, $"Plugins ({_plugins.Count})", true);
+			if (_showPluginsSection)
+			{
+				EditorGUI.indentLevel++;
+				DrawPluginsSection();
+				EditorGUI.indentLevel--;
+			}
 
 			EditorGUILayout.EndScrollView();
 
 			if (GUILayout.Button("Generate Documentation"))
 			{
+				SaveConfig();
 				GenerateDocumentation();
 			}
 		}
+		
+		private void DrawKindOrderSection()
+        {
+            EditorGUILayout.BeginHorizontal();
+            EditorGUILayout.LabelField("Kind", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("Name", EditorStyles.boldLabel);
+            EditorGUILayout.LabelField("Group Title", EditorStyles.boldLabel);
+            GUILayout.Space(90);
+            EditorGUILayout.EndHorizontal();
+
+            for (int i = 0; i < _kindOrder.Count; i++)
+            {
+                EditorGUILayout.BeginHorizontal();
+                _kindOrder[i] = EditorGUILayout.TextField(_kindOrder[i]);
+                _kindTemplates[i] = EditorGUILayout.TextField(_kindTemplates[i]);
+                _kindTitles[i] = EditorGUILayout.TextField(_kindTitles[i]);
+                if (GUILayout.Button("↑", GUILayout.Width(30)) && i > 0)
+                {
+                    (_kindOrder[i - 1], _kindOrder[i]) = (_kindOrder[i], _kindOrder[i - 1]);
+                    (_kindTemplates[i - 1], _kindTemplates[i]) = (_kindTemplates[i], _kindTemplates[i - 1]);
+                    (_kindTitles[i - 1], _kindTitles[i]) = (_kindTitles[i], _kindTitles[i - 1]);
+                }
+
+                if (GUILayout.Button("↓", GUILayout.Width(30)) && i < _kindOrder.Count - 1)
+                {
+                    (_kindOrder[i + 1], _kindOrder[i]) = (_kindOrder[i], _kindOrder[i + 1]);
+                    (_kindTemplates[i + 1], _kindTemplates[i]) = (_kindTemplates[i], _kindTemplates[i + 1]);
+                    (_kindTitles[i + 1], _kindTitles[i]) = (_kindTitles[i], _kindTitles[i + 1]);
+                }
+
+                if (GUILayout.Button("-", GUILayout.Width(30)))
+                {
+                    _kindOrder.RemoveAt(i);
+                    _kindTemplates.RemoveAt(i);
+                    _kindTitles.RemoveAt(i);
+                    i--;
+                }
+
+                EditorGUILayout.EndHorizontal();
+            }
+
+            if (GUILayout.Button("Add Kind"))
+            {
+                _kindOrder.Add("newKind");
+                _kindTemplates.Add("newKind {0}");
+                _kindTitles.Add("NewKinds");
+            }
+        }
+
+        private void DrawPluginsSection()
+        {
+            for (int i = 0; i < _plugins.Count; i++)
+            {
+                var plugin = _plugins[i];
+                var pluginData = _pluginConfigs[i];
+
+                var pluginTitle = pluginData.name;
+                if (plugin.IsDirty())
+                    pluginTitle += " *";
+
+                if (!_showPlugins.ContainsKey(plugin))
+                {
+					_showPlugins[plugin] = false;
+                }
+
+				_showPlugins[plugin] = EditorGUILayout.Foldout(_showPlugins[plugin], pluginTitle, true);
+
+                if (_showPlugins[plugin])
+                {
+					pluginData.enabled = EditorGUILayout.Toggle("Enabled", pluginData.enabled, GUILayout.Width(20));
+					if (pluginData.enabled)
+					{
+						EditorGUI.indentLevel++;
+						plugin.OnGUI();
+						EditorGUI.indentLevel--;
+					}
+				}
+            }
+        }
 
 		private void LoadConfig()
 		{
@@ -141,20 +276,124 @@ namespace Documentator
 
 				_outputFolder = config.outputFolder;
 				_writeTitle = config.writeTitle;
+				_generateTableOfContents = config.generateTableOfContents;
+				_writeAttributes = config.writeAttributes;
+				_inlineClasses = config.inlineClasses;
+				_kindOrder = config.kindOrder is { Count: > 0 } ? config.kindOrder : _kindOrder;
+				_kindTemplates = config.kindTemplates;
+				if (_kindTemplates == null || _kindTemplates.Count != _kindOrder.Count)
+				{
+					_kindTemplates = new List<string>();
+					for (int i = 0; i < _kindOrder.Count; i++)
+					{
+						_kindTemplates.Add(_kindOrder[i] + " {0}");
+					}
+				}
+
+				_kindTitles = config.kindTitles;
+				if (_kindTitles == null || _kindTitles.Count != _kindOrder.Count)
+				{
+					_kindTitles = new List<string>();
+					for (int i = 0; i < _kindOrder.Count; i++)
+					{
+						_kindTitles.Add(_kindOrder[i] + "s");
+					}
+				}
+
+				_pluginConfigs = config.pluginConfigs ?? new List<PluginData>();
+				for (int i = 0; i < _plugins.Count; i++)
+				{
+					var plugin = _plugins[i];
+					var pluginData = _pluginConfigs.FirstOrDefault(p => p.name == plugin.GetType().Name);
+					if (pluginData != null)
+					{
+						plugin.LoadSettings(pluginData.settings);
+					}
+				}
 			}
 		}
 
 		private void SaveConfig()
 		{
+			for (int i = 0; i < _plugins.Count; i++)
+			{
+				var plugin = _plugins[i];
+				var pluginData = _pluginConfigs[i];
+				if (plugin.IsDirty())
+				{
+					pluginData.settings = plugin.GetSerializedSettings();
+					plugin.ResetDirtyFlag();
+				}
+			}
+
 			Config config = new Config
 			{
 				inputFolders = _inputFolders,
 				enableInputFolders = _enableInputFolders,
 				outputFolder = _outputFolder,
-				writeTitle = _writeTitle
+				writeTitle = _writeTitle,
+				generateTableOfContents = _generateTableOfContents,
+				writeAttributes = _writeAttributes,
+				inlineClasses = _inlineClasses,
+				kindOrder = _kindOrder,
+				kindTemplates = _kindTemplates,
+				kindTitles = _kindTitles,
+				pluginConfigs = _pluginConfigs
 			};
 			string json = JsonUtility.ToJson(config);
 			File.WriteAllText(ConfigPath, json);
+		}
+
+		private void LoadPlugins()
+		{
+			_plugins.Clear();
+
+            // Получаем все сборки в текущем домене приложения
+            var assemblies = AppDomain.CurrentDomain.GetAssemblies();
+
+            foreach (var assembly in assemblies)
+            {
+                try
+                {
+                    // Ищем все типы, реализующие интерфейс IDocumentationPlugin
+                    var pluginTypes = assembly.GetTypes()
+                        .Where(t => typeof(IDocumentationPlugin).IsAssignableFrom(t) && !t.IsInterface && !t.IsAbstract);
+
+                    foreach (var pluginType in pluginTypes)
+                    {
+                        try
+                        {
+                            var plugin = (IDocumentationPlugin)Activator.CreateInstance(pluginType);
+                            _plugins.Add(plugin);
+                        }
+                        catch (Exception ex)
+                        {
+                            Debug.LogError($"Error creating instance of plugin {pluginType.Name}: {ex.Message}");
+                        }
+                    }
+                }
+                catch (ReflectionTypeLoadException ex)
+                {
+                    Debug.LogError($"Error loading types from assembly {assembly.FullName}: {ex.Message}");
+                    foreach (var loaderException in ex.LoaderExceptions)
+                    {
+                        Debug.LogError($"Loader Exception: {loaderException.Message}");
+                    }
+                }
+            }
+
+            // Инициализируем настройки плагинов
+            foreach (var plugin in _plugins)
+            {
+                string pluginName = plugin.GetType().Name;
+                PluginData pluginData = _pluginConfigs.FirstOrDefault(p => p.name == pluginName);
+                if (pluginData == null)
+                {
+                    pluginData = new PluginData { name = pluginName, enabled = true, settings = "{}" };
+                    _pluginConfigs.Add(pluginData);
+                }
+                plugin.LoadSettings(pluginData.settings);
+            }
 		}
 
 		private void GenerateDocumentation()
@@ -165,339 +404,29 @@ namespace Documentator
 				return;
 			}
 
+			var parser = new DocumentationParser();
+			var project = new DocumentationProject();
+
 			for (var i = 0; i < _inputFolders.Count; ++i)
 			{
 				if (!_enableInputFolders[i])
 					continue;
 
 				var folder = _inputFolders[i];
-				var folderName = new DirectoryInfo(folder).Name;
-				var outputSubfolder = Path.Combine(_outputFolder, folderName);
-
-				if (!Directory.Exists(outputSubfolder))
-				{
-					Directory.CreateDirectory(outputSubfolder);
-				}
-
-				string[] scriptFiles = Directory.GetFiles(folder, "*.cs", SearchOption.AllDirectories);
-				foreach (var scriptFile in scriptFiles)
-				{
-					ProcessScript(scriptFile, outputSubfolder);
-				}
+				project.Namespaces.AddRange(parser.ParseProject(folder).Namespaces);
 			}
+
+			var enabledPlugins = _plugins.Where((p, i) => _pluginConfigs[i].enabled).ToList();
+			foreach (var plugin in enabledPlugins)
+			{
+				plugin.Generate(project);
+			}
+
+			var generator = new MarkdownGenerator(_writeTitle, _generateTableOfContents, _writeAttributes, _inlineClasses, _kindOrder,
+				_kindTemplates, _kindTitles);
+			generator.GenerateMarkdown(project, _outputFolder);
 
 			Debug.Log("Documentation generated successfully!");
-		}
-
-		private void ProcessScript(string scriptPath, string outputFolder)
-		{
-			string[] lines = File.ReadAllLines(scriptPath);
-			string className = Path.GetFileNameWithoutExtension(scriptPath);
-
-			StringBuilder mdContent = new StringBuilder();
-			StringBuilder commentBuffer = new StringBuilder();
-			string currentAttribute = null;
-			bool inMultiLineComment = false;
-			bool isPublicClass = false;
-
-			ClassInfo classInfo = new();
-
-			foreach (var line in lines)
-			{
-				string trimmedLine = line.Trim();
-
-				if (trimmedLine.StartsWith("// TODO", StringComparison.InvariantCultureIgnoreCase) || trimmedLine.StartsWith("//TODO", StringComparison.InvariantCultureIgnoreCase))
-					continue;
-				
-				if (inMultiLineComment)
-				{
-					commentBuffer.AppendLine(trimmedLine);
-					if (trimmedLine.EndsWith("*/"))
-					{
-						inMultiLineComment = false;
-					}
-				}
-				else if (trimmedLine.StartsWith("//"))
-				{
-					commentBuffer.AppendLine(trimmedLine);
-				}
-				else if (trimmedLine.StartsWith("/*"))
-				{
-					inMultiLineComment = true;
-					commentBuffer.AppendLine(trimmedLine);
-				}
-				else
-				{
-					if (trimmedLine.StartsWith("[Input]"))
-					{
-						currentAttribute = "Input";
-					}
-					else if (trimmedLine.StartsWith("[Output]"))
-					{
-						currentAttribute = "Output";
-					}
-					
-					if (Regex.IsMatch(trimmedLine,
-							@"^public\s+(?:(?:abstract|sealed|static)\s+)*(?:partial\s+)?(class|struct)"))
-					{
-						isPublicClass = true;
-						classInfo.Comment = CleanComment(commentBuffer.ToString());
-
-						Match classMatch = Regex.Match(trimmedLine,
-							@"public\s+((?:abstract|sealed|static)\s+)*(?:partial\s+)?(class|struct)\s+(\w+)(<.*>)?");
-						if (classMatch.Success)
-						{
-						}
-					}
-					else if (isPublicClass)
-					{
-						Match varMatch = Regex.Match(trimmedLine,
-							@"^(?:\[.*?\]\s*)?public\s+((?:static|readonly|const)\s+)*(\w+(?:<.*?>)?)\s+(\w+)\s*(?:{\s*get;|;|=)");
-						if (varMatch.Success)
-						{
-							classInfo.Variables.Add(new MemberInfo
-							{
-								Name = varMatch.Groups[3].Value,
-								Comment = CleanComment(commentBuffer.ToString()),
-								Attribute = currentAttribute
-							});
-						}
-						else
-						{
-							Match methodMatch = Regex.Match(trimmedLine,
-								@"^public\s+((?:static|virtual|override|abstract)\s+)*(\w+(?:<.*?>)?)\s+(\w+)\s*\((.*?)\)");
-							if (methodMatch.Success)
-							{
-								classInfo.Methods.Add(new MemberInfo
-								{
-									Name = methodMatch.Groups[3].Value,
-									Comment = CleanComment(commentBuffer.ToString())
-								});
-							}
-						}
-					}
-
-					commentBuffer.Clear();
-					currentAttribute = null;
-				}
-			}
-
-			var hasComments = !string.IsNullOrEmpty(classInfo.Comment) ||
-							classInfo.Variables.Any(v => !string.IsNullOrEmpty(v.Comment)) ||
-							classInfo.Methods.Any(m => !string.IsNullOrEmpty(m.Comment));
-
-			if (!hasComments)
-			{
-				Debug.Log($"No comments found for {className}. Skipping documentation generation.");
-				return;
-			}
-			
-			if (!Directory.Exists(_outputFolder))
-			{
-				Directory.CreateDirectory(_outputFolder);
-			}
-
-			if (_writeTitle)
-			{
-				mdContent.AppendLine($"# {FormatClassName(className)}");
-				mdContent.AppendLine();
-			}
-
-			if (!string.IsNullOrEmpty(classInfo.Comment))
-			{
-				mdContent.AppendLine("## Description");
-				mdContent.AppendLine(FormatComment(classInfo.Comment));
-				mdContent.AppendLine();
-			}
-
-			// Sort and group variables
-			var inputVariables = classInfo.Variables
-				.Where(v => v.Attribute == "Input" && !string.IsNullOrEmpty(v.Comment)).ToList();
-			var outputVariables = classInfo.Variables
-				.Where(v => v.Attribute == "Output" && !string.IsNullOrEmpty(v.Comment)).ToList();
-			var regularVariables = classInfo.Variables
-				.Where(v => v.Attribute == null && !string.IsNullOrEmpty(v.Comment)).ToList();
-
-			if (inputVariables.Any())
-			{
-				mdContent.AppendLine("## Input Variables");
-				foreach (var variable in inputVariables)
-				{
-					AppendVariableInfo(mdContent, variable);
-				}
-			}
-
-			if (regularVariables.Any())
-			{
-				mdContent.AppendLine("## Variables");
-				foreach (var variable in regularVariables)
-				{
-					AppendVariableInfo(mdContent, variable);
-				}
-			}
-
-			if (outputVariables.Any())
-			{
-				mdContent.AppendLine("## Output Variables");
-				foreach (var variable in outputVariables)
-				{
-					AppendVariableInfo(mdContent, variable);
-				}
-			}
-
-			var methodsWithComments = classInfo.Methods.Where(m => !string.IsNullOrEmpty(m.Comment)).ToList();
-			if (methodsWithComments.Any())
-			{
-				mdContent.AppendLine("## Methods");
-				foreach (var method in methodsWithComments)
-				{
-					mdContent.AppendLine($"### {method.Name}");
-					mdContent.AppendLine(FormatComment(method.Comment));
-					mdContent.AppendLine();
-				}
-			}
-
-			string formattedFileName = FormatFileName(className);
-			string outputPath = Path.Combine(outputFolder, $"{formattedFileName}.md");
-			File.WriteAllText(outputPath, mdContent.ToString());
-
-			Debug.Log($"Documentation generated for {className}");
-		}
-
-		private void AppendVariableInfo(StringBuilder mdContent, MemberInfo variable)
-		{
-			mdContent.AppendLine($"### {variable.Name}");
-			if (!string.IsNullOrEmpty(variable.Comment))
-			{
-				mdContent.AppendLine(FormatComment(variable.Comment));
-			}
-
-			mdContent.AppendLine();
-		}
-
-		private string FormatComment(string comment)
-		{
-			StringBuilder formattedComment = new StringBuilder();
-
-			var summaryMatch = Regex.Match(comment, @"<summary>(.*?)</summary>", RegexOptions.Singleline);
-			if (summaryMatch.Success)
-			{
-				formattedComment.AppendLine(FormatCommentContent(summaryMatch.Groups[1].Value));
-				comment = comment.Replace(summaryMatch.Value, "");
-			}
-
-			formattedComment.Append(FormatCommentContent(comment));
-
-			return formattedComment.ToString().Trim();
-		}
-
-		private string FormatCommentContent(string content)
-		{
-			StringBuilder formatted = new StringBuilder();
-
-			content = Regex.Replace(content, @"<typeparam name=""(\w+)"">(.*?)</typeparam>", m =>
-				$"Where {m.Groups[1].Value}: {m.Groups[2].Value.Trim()}");
-
-			content = Regex.Replace(content, @"<param name=""(\w+)"">(.*?)</param>", m =>
-				$"Parameter '{m.Groups[1].Value}': {m.Groups[2].Value.Trim()}");
-
-			var returnsMatch = Regex.Match(content, @"<returns>(.*?)</returns>", RegexOptions.Singleline);
-			if (returnsMatch.Success)
-			{
-				formatted.AppendLine("#### Returns");
-				string returnsContent = returnsMatch.Groups[1].Value.Trim();
-
-				var parts = Regex.Split(returnsContent, @"(<c>.*?</c>)");
-
-				for (int i = 0; i < parts.Length; i++)
-				{
-					string part = parts[i].Trim();
-					if (part.StartsWith("<c>") && part.EndsWith("</c>"))
-					{
-						string boldContent = part.Substring(3, part.Length - 7);
-						formatted.Append($"- **{boldContent}**: ");
-					}
-					else if (!string.IsNullOrEmpty(part))
-					{
-						formatted.AppendLine(part);
-					}
-				}
-
-				formatted.AppendLine();
-				formatted.AppendLine();
-				content = content.Replace(returnsMatch.Value, "");
-			}
-
-			content = Regex.Replace(content, @"<exception cref=""(\w+)"">(.*?)</exception>", m =>
-			{
-				string cref = ExtractCrefName(m.Groups[1].Value);
-				return $"{cref}: {m.Groups[2].Value.Trim()}";
-			});
-
-			content = Regex.Replace(content, @"<paramref name=""(\w+)""\s*/>", m => $"'{m.Groups[1].Value}'");
-
-			content = Regex.Replace(content, @"<seealso cref=""([^""]+)""\s*/>", m =>
-			{
-				string cref = ExtractCrefName(m.Groups[1].Value);
-				return $"See also: {cref}";
-			});
-
-			content = Regex.Replace(content, @"<see cref=""([^""]+)""\s*/>", m =>
-			{
-				string cref = ExtractCrefName(m.Groups[1].Value);
-				return $"{cref}";
-			});
-
-			content = Regex.Replace(content, @"<(\w+)>(.*?)</\w+>", m => $"#### {m.Groups[1].Value}{m.Groups[2].Value}", RegexOptions.Singleline);
-			//content = Regex.Replace(content, @"<(\w+)>", m => $"#### {m.Groups[1].Value}");
-			//content = Regex.Replace(content, @"</\w+>", "");
-
-			formatted.Append(content.Trim());
-			return formatted.ToString().Trim();
-		}
-
-		private string ExtractCrefName(string cref)
-		{
-			int startIndex = cref.LastIndexOf('.');
-			return startIndex >= 0 ? cref.Substring(startIndex + 1) : cref;
-		}
-
-		private string CleanComment(string comment)
-		{
-			// Remove comment symbols and leading/trailing whitespace
-			string cleaned = Regex.Replace(comment, @"^[/\*\s]+|[\*/\s]+$", "", RegexOptions.Multiline).Trim();
-
-			// Remove any remaining /// from the start of lines
-			cleaned = Regex.Replace(cleaned, @"^\s*/// ?", "", RegexOptions.Multiline);
-
-			return cleaned;
-		}
-
-		private class ClassInfo
-		{
-			public string Comment { get; set; }
-			public List<MemberInfo> Variables { get; } = new List<MemberInfo>();
-			public List<MemberInfo> Methods { get; } = new List<MemberInfo>();
-		}
-
-		private class MemberInfo
-		{
-			public string Name { get; set; }
-			public string Comment { get; set; }
-			public string Attribute { get; set; }
-		}
-
-		private string FormatFileName(string className)
-		{
-			string[] words = Regex.Split(className, @"(?<!^)(?=[A-Z][a-z]|(?<=[a-z])[A-Z]|\d+)");
-			return string.Join("-", words);
-		}
-
-		private string FormatClassName(string className)
-		{
-			string[] words = Regex.Split(className, @"(?<!^)(?=[A-Z][a-z]|(?<=[a-z])[A-Z]|\d+)");
-
-			return string.Join(" ", words);
 		}
 	}
 }
