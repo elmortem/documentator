@@ -1,5 +1,5 @@
 # Documentator
-Not a complete Markdown generator from XML documentation in comments.
+Markdown generator from XML documentation in comments using Roslyn.
 
 ## Installation Package
 Installation as a unity module via a git link in PackageManager:
