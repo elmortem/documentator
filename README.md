@@ -8,5 +8,5 @@ https://github.com/elmortem/documentator.git?path=Documentator/Packages/document
 ```
 Or direct editing of `Packages/manifest' is supported.json:
 ```
-"com.elmortem.levelgenerator": "https://github.com/elmortem/documentator.git?path=Documentator/Packages/documentator",
+"com.elmortem.documentator": "https://github.com/elmortem/documentator.git?path=Documentator/Packages/documentator",
 ```
