@@ -21,6 +21,11 @@ namespace Documentator
 				ParseFile(file, project);
 			}
 
+			foreach (var namespaceInfo in project.Namespaces)
+			{
+				namespaceInfo.PackageName = Path.GetDirectoryName(projectPath);
+			}
+
 			return project;
 		}
 
