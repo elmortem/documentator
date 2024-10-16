@@ -40,7 +40,7 @@ namespace Documentator
 		{
 			foreach (var namespaceInfo in project.Namespaces)
 			{
-				var namespacePath = Path.Combine(outputFolder, namespaceInfo.PackageName, FormatDirectoryName(namespaceInfo.Name));
+				var namespacePath = Path.Combine(outputFolder, namespaceInfo.PackageName, FormatDirectoryName(namespaceInfo.Directory));
 
 				foreach (var item in SortItems(namespaceInfo.Items))
 				{

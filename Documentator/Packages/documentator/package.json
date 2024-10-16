@@ -2,7 +2,7 @@
   "displayName": "Documentator",
   "name": "com.elmortem.documentator",
   "author": "Makar Osokin",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "unity": "2022.3",
   "description": "Markdown generator from XML documentation in comments.",
   "keywords": [
