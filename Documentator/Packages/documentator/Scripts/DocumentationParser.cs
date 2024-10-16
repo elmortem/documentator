@@ -15,6 +15,8 @@ namespace Documentator
 		{
 			var project = new DocumentationProject();
 			var files = Directory.GetFiles(projectPath, "*.cs", SearchOption.AllDirectories);
+			
+			var packageName = Path.GetFileName(projectPath);
 
 			foreach (var file in files)
 			{
@@ -23,7 +25,7 @@ namespace Documentator
 
 			foreach (var namespaceInfo in project.Namespaces)
 			{
-				namespaceInfo.PackageName = Path.GetDirectoryName(projectPath);
+				namespaceInfo.PackageName = packageName;
 			}
 
 			return project;
