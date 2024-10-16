@@ -10,6 +10,7 @@ namespace Documentator
 	public class NamespaceInfo
 	{
 		public string PackageName { get; set; }
+		public string Directory { get; set; }
 		public string Name { get; set; }
 		public List<DocumentationItem> Items { get; } = new();
 	}

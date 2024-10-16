@@ -16,16 +16,20 @@ namespace Documentator
 			var project = new DocumentationProject();
 			var files = Directory.GetFiles(projectPath, "*.cs", SearchOption.AllDirectories);
 			
-			var packageName = Path.GetFileName(projectPath);
-
 			foreach (var file in files)
 			{
 				ParseFile(file, project);
 			}
+			
+			var packageName = Path.GetFileName(projectPath);
+			var namespaces = project.Namespaces.Select(p => p.Name).ToList();
+			var commonPrefix = FindCommonPrefix(namespaces);
+			var commonPrefixLength = commonPrefix.Length;
 
 			foreach (var namespaceInfo in project.Namespaces)
 			{
 				namespaceInfo.PackageName = packageName;
+				namespaceInfo.Directory = namespaceInfo.Name.Substring(commonPrefixLength);
 			}
 
 			return project;
@@ -362,6 +366,39 @@ namespace Documentator
 			}
 
 			return string.Join(Environment.NewLine, cleanedLines.Where(l => !string.IsNullOrWhiteSpace(l)));
+		}
+		
+		public static string FindCommonPrefix(List<string> namespaces)
+		{
+			if (namespaces == null || namespaces.Count == 0)
+				return string.Empty;
+
+			string firstNamespace = namespaces[0];
+			int commonPrefixLength = firstNamespace.Length;
+
+			for (int i = 1; i < namespaces.Count; i++)
+			{
+				commonPrefixLength = Math.Min(commonPrefixLength, namespaces[i].Length);
+				for (int j = 0; j < commonPrefixLength; j++)
+				{
+					if (firstNamespace[j] != namespaces[i][j])
+					{
+						commonPrefixLength = j;
+						break;
+					}
+				}
+			}
+
+			string commonPrefix = firstNamespace.Substring(0, commonPrefixLength);
+        
+			// Убедимся, что префикс заканчивается на полном имени неймспейса
+			int lastDotIndex = commonPrefix.LastIndexOf('.');
+			if (lastDotIndex >= 0)
+			{
+				commonPrefix = commonPrefix.Substring(0, lastDotIndex + 1);
+			}
+
+			return commonPrefix;
 		}
 	}
 }
